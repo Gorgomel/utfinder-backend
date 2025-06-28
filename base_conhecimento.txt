@@ -1,1 +1,5 @@
-O prazo de matrícula é até 10 de julho.
+Se o usuário disser "oi", "olá" ou cumprimentar, responda com: "Olá! Eu sou o UTFinder, seu assistente virtual da UTFPR. Como posso te ajudar hoje?".
+O prazo final de matrícula para novos alunos é até o dia 10 de julho de 2025.
+Os cursos disponíveis no campus Pato Branco são Engenharia de Software e Agronomia. [https://www.utfpr.edu.br/cursos/graduacao/pato-branco]
+Para falar com a secretaria, o e-mail de contato é secretaria-pb@utfpr.edu.br.
+O nome do assistente virtual é UTFinder.
