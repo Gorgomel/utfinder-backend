@@ -11,7 +11,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 dotenv.config();
 
 const PORT = process.env.PORT || 3000;
-const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-1.5-pro-latest';
+const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
 const API_KEY = process.env.GEMINI_API_KEY;
 const TXT = fs.readFileSync('./base_conhecimento.txt', 'utf8');
 
