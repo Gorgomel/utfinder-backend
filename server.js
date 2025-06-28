@@ -1,24 +1,82 @@
-// server.js - Versão com prompt avançado para conversação natural
+// server.js - Versão com Busca Semântica e Embeddings
 
 import dotenv from 'dotenv';
 import fs from 'fs';
 import express from 'express';
 import cors from 'cors';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { similarity } from 'simple-linalg';
 
-// === CONFIG ======================================================
+// === CONFIGURAÇÃO ======================================================
 dotenv.config();
-
 const PORT = process.env.PORT || 3000;
-const MODEL_NAME = 'gemini-1.5-flash-latest';
 const API_KEY = process.env.GEMINI_API_KEY;
-const TXT = fs.readFileSync('./base_conhecimento.txt', 'utf8');
 
-// Inicializa o cliente da API do Google
+// Inicializa os clientes da API do Google
 const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({ model: MODEL_NAME });
-// ================================================================
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+const embeddingModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
 
+// Armazenamento em memória para nossa base de conhecimento "vetorizada"
+const knowledgeBase = [];
+
+// --- FUNÇÕES DA BASE DE CONHECIMENTO ----------------------------------
+
+/**
+ * Processa o arquivo .txt e cria os embeddings para cada linha.
+ * Isso é feito apenas uma vez, quando o servidor inicia.
+ */
+async function buildKnowledgeBase() {
+  console.log('Iniciando construção da base de conhecimento...');
+  const fileContent = fs.readFileSync('./base_conhecimento.txt', 'utf8');
+  const facts = fileContent.split('\n').filter(line => line.trim().length > 0);
+
+  // Pega todos os fatos e transforma em embeddings
+  const { embeddings } = await embeddingModel.batchEmbedContents({
+    requests: facts.map(text => ({ content: text })),
+  });
+
+  // Salva o texto original junto com seu vetor de embedding
+  for (let i = 0; i < facts.length; i++) {
+    knowledgeBase.push({
+      text: facts[i],
+      embedding: embeddings[i].values,
+    });
+  }
+  console.log(`✅ Base de conhecimento construída com ${knowledgeBase.length} fatos.`);
+}
+
+/**
+ * Encontra os fatos mais relevantes na base de conhecimento para uma dada pergunta.
+ * @param {string} userQuery A pergunta do usuário.
+ * @returns {string} Uma string contendo os fatos mais relevantes.
+ */
+async function findRelevantFacts(userQuery) {
+  if (knowledgeBase.length === 0) return '';
+
+  // 1. Cria o embedding para a pergunta do usuário
+  const { embedding } = await embeddingModel.embedContent(userQuery);
+  const queryEmbedding = embedding.values;
+
+  // 2. Calcula a similaridade entre a pergunta e cada fato na base
+  for (const fact of knowledgeBase) {
+    fact.similarity = similarity(queryEmbedding, fact.embedding);
+  }
+
+  // 3. Ordena os fatos pela similaridade (do maior para o menor)
+  knowledgeBase.sort((a, b) => b.similarity - a.similarity);
+
+  // 4. Pega os 3 fatos mais relevantes e formata para o prompt
+  const topFacts = knowledgeBase
+    .slice(0, 3)
+    .map(fact => fact.text)
+    .join('\n');
+    
+  console.log('Fatos mais relevantes encontrados:\n', topFacts);
+  return topFacts;
+}
+
+// === SERVIDOR EXPRESS =================================================
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -27,29 +85,26 @@ app.post('/chat', async (req, res) => {
   const userMsg = (req.body.message || '').slice(0, 2000);
 
   try {
-    // --- PROMPT AVANÇADO PARA CONVERSAÇÃO ---
+    // Passo 1: Encontrar os fatos mais relevantes usando a busca semântica
+    const relevantFacts = await findRelevantFacts(userMsg);
+
+    // Passo 2: Construir um prompt focado apenas com a informação relevante
     const prompt = `
-      # PERSONA
-      Você é o UTFinder, um assistente virtual especialista sobre a Universidade Tecnológica Federal do Paraná (UTFPR). Você é sempre amigável, prestativo e se comunica de forma clara.
+      Você é o UTFinder, um assistente virtual amigável da UTFPR.
+      Sua tarefa é responder a pergunta do usuário usando APENAS o CONTEXTO fornecido abaixo.
+      Se o CONTEXTO não contiver a resposta, diga que não encontrou a informação.
+      Não use nenhum conhecimento prévio.
 
-      # CONTEXTO DE CONHECIMENTO
-      Sua única fonte de verdade é o conteúdo fornecido estritamente dentro da seção '# BASE DE CONHECIMENTO'. Você não deve usar nenhum conhecimento externo a este.
+      CONTEXTO:
+      ---
+      ${relevantFacts}
+      ---
 
-      # REGRAS DE CONVERSAÇÃO
-      1.  **SAUDAÇÃO INICIAL:** Se o usuário apenas cumprimentar (com "oi", "olá", "e aí", etc.), responda com: "Olá! Eu sou o UTFinder, o assistente virtual da UTFPR. Como posso te ajudar hoje?". Não mencione nenhum outro assunto a menos que o usuário pergunte.
-      2.  **INFORMAÇÃO NÃO ENCONTRADA:** Se a resposta para a pergunta do usuário não estiver claramente na '# BASE DE CONHECIMENTO', responda **apenas e exatamente** com a frase: "Desculpe, não encontrei essa informação na minha base de dados.". Não adicione nenhuma informação extra.
-      3.  **PERGUNTAS VAGAS:** Se a pergunta do usuário for muito curta, vaga ou sem sentido (exemplos: "po", "ata", "ok"), peça para ele ser mais específico, respondendo com: "Não entendi bem sua pergunta. Poderia, por favor, me dar mais detalhes?".
-      4.  **FORMATAÇÃO DE LINKS:** Se a resposta usar uma informação que tem um link associado na base de conhecimento, adicione o link no final da resposta sob o título "Para mais detalhes:".
-      5.  **FOCO TOTAL:** Baseie sua resposta 100% no contexto fornecido. Nunca invente informações, prazos, contatos ou links.
-
-      # BASE DE CONHECIMENTO
-      ${TXT}
-      # FIM DA BASE DE CONHECIMENTO
-
-      Com base estrita na sua Persona, no Conhecimento e nas Regras acima, responda a pergunta do usuário.
+      Com base estrita no CONTEXTO acima, responda a pergunta do usuário.
       Pergunta: "${userMsg}"
     `;
-
+    
+    // Passo 3: Gerar a resposta final com o modelo de chat
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const reply = response.text().trim();
@@ -57,11 +112,13 @@ app.post('/chat', async (req, res) => {
     res.json({ reply });
 
   } catch (err) {
-    console.error("Erro na requisição ao Gemini:", err);
-    res.status(500).json({ error: err.message || 'Erro ao consultar a API do Gemini' });
+    console.error("Erro no processamento do chat:", err);
+    res.status(500).json({ error: err.message || 'Erro ao processar sua requisição.' });
   }
 });
 
-app.listen(PORT, () =>
-  console.log(`✅ Backend online na porta ${PORT}`)
-);
+// Inicia o servidor e constrói a base de conhecimento
+app.listen(PORT, async () => {
+  await buildKnowledgeBase();
+  console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+});

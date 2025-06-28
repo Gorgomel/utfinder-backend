@@ -20,10 +20,11 @@
   "author": "Matheus (Gorgomel)",
   "license": "MIT",
   "dependencies": {
+    "@google/generative-ai": "^0.15.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "@google/generative-ai": "^0.15.0"
+    "simple-linalg": "^3.0.1"
   },
   "devDependencies": {
     "eslint": "^8.57.0",
