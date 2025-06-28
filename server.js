@@ -1,21 +1,23 @@
-// server.js - versão ESModule para OpenAI v4+
+// server.js - versão atualizada para Google Gemini API
 
 import dotenv from 'dotenv';
 import fs from 'fs';
 import express from 'express';
 import cors from 'cors';
-import OpenAI from 'openai';
+// Importa a classe do SDK do Google
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // === CONFIG ======================================================
 dotenv.config();
 
-const PORT  = process.env.PORT || 3000;
-const MODEL = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
-const TXT   = fs.readFileSync('./base_conhecimento.txt', 'utf8');
+const PORT = process.env.PORT || 3000;
+const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-1.5-pro-latest';
+const API_KEY = process.env.GEMINI_API_KEY;
+const TXT = fs.readFileSync('./base_conhecimento.txt', 'utf8');
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// Inicializa o cliente da API do Google
+const genAI = new GoogleGenerativeAI(API_KEY);
+const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 // ================================================================
 
 const app = express();
@@ -26,33 +28,25 @@ app.post('/chat', async (req, res) => {
   const userMsg = (req.body.message || '').slice(0, 2000);
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: MODEL,
-      temperature: 0.2,
-      messages: [
-        {
-          role: 'system',
-          content:
-`Você é o UTFinder. Use APENAS o conteúdo entre '====' como base de conhecimento.
+    // Monta o prompt para o Gemini
+    const prompt = `Você é o UTFinder. Use APENAS o conteúdo entre '====' como base de conhecimento.
 Se o conteúdo citar um link em "[...]", mostre esse link em "Mais informações:" no fim.
 ====
 ${TXT}
-====`
-        },
-        { role: 'user', content: userMsg }
-      ]
-    });
+====
+Pergunta do usuário: ${userMsg}`;
 
-    const reply = completion.choices[0].message.content.trim();
+    // Gera o conteúdo usando a nova API
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const reply = response.text().trim();
+
     res.json({ reply });
+
   } catch (err) {
-  console.error("Erro na requisição OpenAI:", err);
-  if (err?.error) {
-    res.status(500).json({ error: err.error.message || 'Erro ao consultar ChatGPT' });
-  } else {
-    res.status(500).json({ error: err.message || 'Erro ao consultar ChatGPT' });
+    console.error("Erro na requisição ao Gemini:", err);
+    res.status(500).json({ error: err.message || 'Erro ao consultar a API do Gemini' });
   }
-}
 });
 
 app.listen(PORT, () =>

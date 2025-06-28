@@ -1,7 +1,7 @@
 {
   "name": "utfinder-backend",
   "version": "1.0.0",
-  "description": "Backend do UTFinder com integração à API do ChatGPT usando Node.js e Express",
+  "description": "Backend do UTFinder com integração à API do Gemini usando Node.js e Express",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -11,8 +11,8 @@
     "test": "echo \"Nenhum teste definido ainda\""
   },
   "keywords": [
-    "openai",
-    "chatgpt",
+    "gemini",
+    "google-ai",
     "express",
     "utfinder",
     "backend"
@@ -23,7 +23,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "openai": "^4.30.0"
+    "@google/generative-ai": "^0.15.0"
   },
   "devDependencies": {
     "eslint": "^8.57.0",
