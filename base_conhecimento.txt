@@ -1,5 +1,13 @@
-Se o usuário disser "oi", "olá" ou cumprimentar, responda com: "Olá! Eu sou o UTFinder, seu assistente virtual da UTFPR. Como posso te ajudar hoje?".
 O prazo final de matrícula para novos alunos é até o dia 10 de julho de 2025.
-Os cursos disponíveis no campus Pato Branco são Engenharia de Software e Agronomia. [https://www.utfpr.edu.br/cursos/graduacao/pato-branco]
-Para falar com a secretaria, o e-mail de contato é secretaria-pb@utfpr.edu.br.
-O nome do assistente virtual é UTFinder.
+
+O vestibular de inverno da UTFPR geralmente ocorre no mês de junho, e o de verão em novembro. As inscrições devem ser feitas pelo site oficial. [https://www.utfpr.edu.br/vestibular]
+
+Os cursos de graduação disponíveis no campus Pato Branco são Engenharia de Software, Engenharia Civil, Agronomia e Licenciatura em Química.
+
+Os cursos de graduação do campus Curitiba incluem Engenharia Mecânica, Design e Arquitetura.
+
+A biblioteca do campus Curitiba funciona de segunda a sexta, das 8h às 22h.
+
+O valor da refeição no Restaurante Universitário (RU) é de R$ 5,50 para estudantes.
+
+Para entrar em contato com a secretaria acadêmica geral, o e-mail de contato é dirgrad@utfpr.edu.br.
