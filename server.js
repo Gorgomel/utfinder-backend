@@ -46,9 +46,13 @@ ${TXT}
     const reply = completion.choices[0].message.content.trim();
     res.json({ reply });
   } catch (err) {
-    console.error(err?.error || err);
-    res.status(500).json({ error: 'Erro ao consultar ChatGPT' });
+  console.error("Erro na requisição OpenAI:", err);
+  if (err?.error) {
+    res.status(500).json({ error: err.error.message || 'Erro ao consultar ChatGPT' });
+  } else {
+    res.status(500).json({ error: err.message || 'Erro ao consultar ChatGPT' });
   }
+}
 });
 
 app.listen(PORT, () =>
