@@ -1,17 +1,7 @@
-Q: Qual o prazo de matrícula?
-A: O prazo final para matrículas de novos estudantes é 10 de julho de 2025.
-
-Q: Quais cursos a UTFPR oferece em Pato Branco?
-A: No campus Pato Branco, a UTFPR oferece os cursos de Engenharia de Software, Engenharia Civil, Agronomia e Licenciatura em Química.
-
-Q: Que cursos de graduação tem no campus de Curitiba?
-A: O campus de Curitiba tem uma grande variedade de cursos, incluindo Engenharia Mecânica, Design, Arquitetura e Urbanismo e Sistemas de Informação.
-
-Q: E no campus de Medianeira, quais os cursos?
-A: Em Medianeira, alguns dos cursos oferecidos são Ciência da Computação e Engenharia de Alimentos.
-
-Q: Como funciona o vestibular?
-A: O vestibular da UTFPR acontece duas vezes por ano. As inscrições são feitas online através do site oficial da universidade. [https://www.utfpr.edu.br/vestibular]
-
-Q: Qual o horário da biblioteca de Curitiba?
-A: A biblioteca do campus Curitiba funciona de segunda a sexta, das 8h às 22h.
+O prazo final para matrículas de novos estudantes é 10 de julho de 2025.
+A UTFPR possui diversos campi no Paraná, incluindo Pato Branco, Curitiba e Medianeira.
+O vestibular da UTFPR acontece duas vezes por ano, com inscrições online pelo site oficial.
+O campus Pato Branco oferece os cursos de Engenharia de Software, Engenharia Civil, Agronomia e Licenciatura em Química.
+O campus Curitiba oferece os cursos de Engenharia Mecânica, Design, Arquitetura e Urbanismo e Sistemas de Informação.
+O campus Medianeira oferece os cursos de Ciência da Computação e Engenharia de Alimentos.
+A biblioteca do campus Curitiba funciona de segunda a sexta, das 8h às 22h.

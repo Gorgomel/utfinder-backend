@@ -1,4 +1,4 @@
-// server.js - Versão Definitiva com Síntese de Informações
+// server.js - Versão HyDE: A mais prática e inteligente
 
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -34,50 +34,61 @@ const knowledgeBase = [];
 // --- FUNÇÕES DA BASE DE CONHECIMENTO ----------------------------------
 
 async function buildKnowledgeBase() {
-  console.log('Iniciando construção da base de conhecimento com formato Q&A...');
+  console.log('Construindo base de conhecimento com texto bruto...');
   const fileContent = fs.readFileSync('./base_conhecimento.txt', 'utf8');
-  const qaPairs = fileContent.split('\n\n').filter(p => p.trim());
+  const facts = fileContent.split('\n').filter(line => line.trim().length > 0);
 
-  if (qaPairs.length === 0) {
+  if (facts.length === 0) {
     console.warn("Base de conhecimento está vazia.");
     return;
   }
+  
+  const contents = facts.map(text => ({ parts: [{ text }], role: "user" }));
+  const { embeddings } = await embeddingModel.batchEmbedContents({
+      requests: contents.map(content => ({ content, taskType: TaskType.RETRIEVAL_DOCUMENT }))
+  });
 
-  const requests = qaPairs.map(pair => ({
-    content: { parts: [{ text: pair }], role: "user" },
-    taskType: TaskType.RETRIEVAL_DOCUMENT,
-    title: pair.substring(0, pair.indexOf('\n'))
-  }));
-
-  const { embeddings } = await embeddingModel.batchEmbedContents({ requests });
-
-  for (let i = 0; i < qaPairs.length; i++) {
-    knowledgeBase.push({ text: qaPairs[i], embedding: embeddings[i].values });
+  for (let i = 0; i < facts.length; i++) {
+    knowledgeBase.push({ text: facts[i], embedding: embeddings[i].values });
   }
-  console.log(`✅ Base de conhecimento construída com ${knowledgeBase.length} pares.`);
+  console.log(`✅ Base de conhecimento construída com ${knowledgeBase.length} fatos.`);
 }
 
-async function findRelevantFacts(userQuery) {
+/**
+ * Usa a técnica HyDE para encontrar os fatos mais relevantes.
+ */
+async function findRelevantFactsHyDE(userQuery) {
   if (knowledgeBase.length === 0) return '';
+
+  // 1. Gera uma resposta hipotética para a pergunta do usuário
+  const promptHyDE = `Escreva um pequeno parágrafo que responda a seguinte pergunta, mesmo que você não saiba a resposta exata: "${userQuery}"`;
+  const hypotheticalAnswerResult = await chatModel.generateContent(promptHyDE);
+  const hypotheticalAnswer = hypotheticalAnswerResult.response.text();
   
-  const { embedding } = await embeddingModel.embedContent({
-    content: { parts: [{ text: userQuery }], role: "user" },
-    taskType: TaskType.RETRIEVAL_QUERY
-  });
+  // 2. Cria o embedding dessa resposta hipotética
+  const { embedding } = await embeddingModel.embedContent(hypotheticalAnswer);
   const queryEmbedding = embedding.values;
 
+  // 3. Compara o embedding da resposta hipotética com a base de conhecimento
   for (const fact of knowledgeBase) {
     fact.similarity = cosineSimilarity(queryEmbedding, fact.embedding);
   }
 
   knowledgeBase.sort((a, b) => b.similarity - a.similarity);
 
-  // Aumentamos para 5 para capturar mais contexto para síntese
-  return knowledgeBase
-    .slice(0, 5)
-    .filter(fact => fact.similarity > 0.65) // Limiar um pouco mais alto
+  const topFacts = knowledgeBase
+    .slice(0, 3)
+    .filter(fact => fact.similarity > 0.7) // Usamos um limiar mais alto
     .map(fact => fact.text)
-    .join('\n\n');
+    .join('\n');
+    
+  console.log('--- HyDE ---');
+  console.log('Pergunta Original:', userQuery);
+  console.log('Resposta Hipotética Gerada:', hypotheticalAnswer);
+  console.log('Fatos Relevantes Encontrados:', topFacts || 'Nenhum');
+  console.log('------------');
+  
+  return topFacts;
 }
 
 // === SERVIDOR EXPRESS =================================================
@@ -89,26 +100,25 @@ app.post('/chat', async (req, res) => {
   const userMsg = (req.body.message || '').slice(0, 2000);
 
   try {
-    const relevantFacts = await findRelevantFacts(userMsg);
+    const relevantFacts = await findRelevantFactsHyDE(userMsg);
 
-    // O PROMPT FINAL, COM INSTRUÇÃO DE SÍNTESE
     const finalPrompt = `
       # PERSONA
-      Você é o UTFinder, um assistente especialista da UTFPR. Sua comunicação é clara, prestativa e confiante. Você nunca menciona sua base de dados ou que é uma IA.
+      Você é o UTFinder, um assistente especialista da UTFPR. Sua comunicação é clara e direta. Aja como um especialista consultando suas anotações. Nunca mencione sua base de dados.
 
-      # REGRAS DE RACIOCÍNIO
-      1.  **SÍNTESE DE INFORMAÇÃO:** Sua principal tarefa é responder a pergunta do usuário. Se o CONTEXTO abaixo contiver múltiplos fatos relevantes (ex: cursos em diferentes campi), **sintetize-os em uma única resposta completa e bem organizada**. Não liste os fatos separadamente.
-      2.  **PRECISÃO:** Baseie sua resposta estritamente no CONTEXTO. Não adicione informações que não estejam lá.
-      3.  **INFORMAÇÃO FALTANTE:** Se o CONTEXTO não contiver absolutamente nenhuma informação relevante para responder à pergunta, diga de forma educada que não possui essa informação específica. Ex: "Não encontrei informações sobre X."
-      4.  **CONVERSA GERAL:** Se a pergunta for um bate-papo casual (oi, tudo bem, etc.), responda de forma natural e amigável.
-
+      # REGRAS
+      1. Use o CONTEXTO abaixo para formular sua resposta para a PERGUNTA do usuário.
+      2. Se o CONTEXTO estiver vazio ou não for relevante, use seu conhecimento geral para ter uma conversa amigável, mas deixe claro que não possui a informação específica sobre a UTFPR.
+      
       # CONTEXTO
       ---
-      ${relevantFacts || "Nenhum contexto relevante encontrado."}
+      ${relevantFacts || "Nenhum."}
       ---
 
-      Com base em todas as suas regras, e priorizando a SÍNTESE, responda à pergunta do usuário.
-      Pergunta: "${userMsg}"
+      # PERGUNTA
+      "${userMsg}"
+
+      Com base nas regras, forneça a resposta.
     `;
     
     const result = await chatModel.generateContent(finalPrompt);
@@ -125,5 +135,5 @@ app.post('/chat', async (req, res) => {
 // Inicia o servidor
 app.listen(PORT, async () => {
   await buildKnowledgeBase();
-  console.log(`🚀 Servidor com capacidade de síntese rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor HyDE rodando na porta ${PORT}`);
 });
