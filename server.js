@@ -1,3 +1,5 @@
+// server.js - Versão Final com Multi-Query HyDE para máxima precisão
+
 import dotenv from 'dotenv';
 import fs from 'fs';
 import express from 'express';
@@ -53,40 +55,53 @@ async function buildKnowledgeBase() {
 }
 
 /**
- * Usa a técnica HyDE para encontrar os fatos mais relevantes.
+ * Usa a técnica Multi-Query HyDE para encontrar os fatos mais relevantes.
  */
-async function findRelevantFactsHyDE(userQuery) {
-  if (knowledgeBase.length === 0) return '';
-
-  // 1. Gera uma resposta hipotética para a pergunta do usuário
-  const promptHyDE = `Escreva um pequeno parágrafo que responda a seguinte pergunta, mesmo que você não saiba a resposta exata: "${userQuery}"`;
-  const hypotheticalAnswerResult = await chatModel.generateContent(promptHyDE);
-  const hypotheticalAnswer = hypotheticalAnswerResult.response.text();
+async function findRelevantFactsMultiQuery(userQuery) {
+    if (knowledgeBase.length === 0) return '';
   
-  // 2. Cria o embedding dessa resposta hipotética
-  const { embedding } = await embeddingModel.embedContent(hypotheticalAnswer);
-  const queryEmbedding = embedding.values;
-
-  // 3. Compara o embedding da resposta hipotética com a base de conhecimento
-  for (const fact of knowledgeBase) {
-    fact.similarity = cosineSimilarity(queryEmbedding, fact.embedding);
-  }
-
-  knowledgeBase.sort((a, b) => b.similarity - a.similarity);
-
-  const topFacts = knowledgeBase
-    .slice(0, 3)
-    .filter(fact => fact.similarity > 0.7) // Limiar mais alto
-    .map(fact => fact.text)
-    .join('\n');
-    
-  console.log('--- HyDE ---');
-  console.log('Pergunta Original:', userQuery);
-  console.log('Resposta Hipotética Gerada:', hypotheticalAnswer);
-  console.log('Fatos Relevantes Encontrados:', topFacts || 'Nenhum');
-  console.log('------------');
+    // 1. Gera 3 variações da pergunta do usuário para uma busca mais ampla
+    const multiQueryPrompt = `Gere 3 variações da seguinte pergunta de usuário, mantendo o mesmo significado. Separe cada variação com '|||'.
+    Pergunta original: "${userQuery}"
+    Variações:`;
+    const multiQueryResult = await chatModel.generateContent(multiQueryPrompt);
+    const queries = [userQuery, ...multiQueryResult.response.text().split('|||').map(q => q.trim())];
   
-  return topFacts;
+    // 2. Cria embeddings para todas as variações da pergunta
+    const { embeddings } = await embeddingModel.batchEmbedContents({
+      requests: queries.map(q => ({
+        content: { parts: [{ text: q }], role: "user" },
+        taskType: TaskType.RETRIEVAL_QUERY,
+      })),
+    });
+    const queryEmbeddings = embeddings.map(e => e.values);
+  
+    // 3. Para cada fato na base, encontra a sua MELHOR similaridade contra TODAS as variações da pergunta
+    for (const fact of knowledgeBase) {
+      let maxSimilarity = 0;
+      for (const queryEmbedding of queryEmbeddings) {
+        const currentSimilarity = cosineSimilarity(queryEmbedding, fact.embedding);
+        if (currentSimilarity > maxSimilarity) {
+          maxSimilarity = currentSimilarity;
+        }
+      }
+      fact.similarity = maxSimilarity;
+    }
+  
+    knowledgeBase.sort((a, b) => b.similarity - a.similarity);
+  
+    const topFacts = knowledgeBase
+      .slice(0, 4) // Pega os 4 melhores fatos
+      .filter(fact => fact.similarity > 0.7)
+      .map(fact => fact.text)
+      .join('\n\n');
+  
+    console.log('--- Multi-Query ---');
+    console.log('Variações de Busca Geradas:', queries.join(' | '));
+    console.log('Fatos Relevantes Encontrados:', topFacts || 'Nenhum');
+    console.log('-------------------');
+  
+    return topFacts;
 }
 
 // === SERVIDOR EXPRESS =================================================
@@ -98,26 +113,24 @@ app.post('/chat', async (req, res) => {
   const userMsg = (req.body.message || '').slice(0, 2000);
 
   try {
-    const relevantFacts = await findRelevantFactsHyDE(userMsg);
+    const relevantFacts = await findRelevantFactsMultiQuery(userMsg);
 
     const finalPrompt = `
       # PERSONA
-      Você é o UTFinder, um assistente virtual especialista da UTFPR. Sua comunicação é clara, direta e sempre prestativa. Você nunca revela seus processos internos nem menciona "base de dados" ou "contexto".
+      Você é o UTFinder, um assistente especialista da UTFPR. Sua comunicação é clara, direta e sempre prestativa.
 
       # INSTRUÇÕES
-      - Se a pergunta do usuário for sobre a UTFPR e houver CONTEXTO relevante, responda usando **apenas** essa informação.
-      - Se a pergunta não tiver relação com a UTFPR, ou se não houver CONTEXTO relevante, responda usando seu conhecimento geral de forma natural.
-      - Para saudações ou bate-papo, seja simplesmente amigável.
-
-      # CONTEXTO (informações específicas da UTFPR)
+      - Sua principal tarefa é responder a pergunta do usuário com base no CONTEXTO.
+      - Se o CONTEXTO contiver múltiplos fatos relevantes, sintetize-os em uma resposta única e coesa.
+      - Se o CONTEXTO não for relevante, responda usando seu conhecimento geral de forma natural e amigável.
+      
+      # CONTEXTO
       ---
-      ${relevantFacts || "Nenhum contexto relevante para esta pergunta."}
+      ${relevantFacts || "Nenhum."}
       ---
 
-      # PERGUNTA DO USUÁRIO
+      # PERGUNTA
       "${userMsg}"
-
-      # SUA RESPOSTA
     `;
     
     const result = await chatModel.generateContent(finalPrompt);
@@ -134,5 +147,5 @@ app.post('/chat', async (req, res) => {
 // Inicia o servidor
 app.listen(PORT, async () => {
   await buildKnowledgeBase();
-  console.log(`🚀 Servidor HyDE rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor Multi-Query HyDE rodando na porta ${PORT}`);
 });
