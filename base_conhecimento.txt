@@ -1,20 +1,17 @@
-Q: Qual o prazo ou data final para as matrículas?
-A: O prazo final de matrícula para novos alunos é até o dia 10 de julho de 2025.
+Q: Qual o prazo de matrícula?
+A: O prazo final para matrículas de novos estudantes é 10 de julho de 2025.
 
-Q: Quando é o vestibular?
-A: O vestibular de inverno da UTFPR geralmente ocorre no mês de junho, e o de verão em novembro. As inscrições devem ser feitas pelo site oficial. [https://www.utfpr.edu.br/vestibular]
+Q: Quais cursos a UTFPR oferece em Pato Branco?
+A: No campus Pato Branco, a UTFPR oferece os cursos de Engenharia de Software, Engenharia Civil, Agronomia e Licenciatura em Química.
 
-Q: Quais cursos de engenharia tem em Pato Branco?
-A: O campus Pato Branco oferece os cursos de Engenharia de Software e Engenharia Civil.
+Q: Que cursos de graduação tem no campus de Curitiba?
+A: O campus de Curitiba tem uma grande variedade de cursos, incluindo Engenharia Mecânica, Design, Arquitetura e Urbanismo e Sistemas de Informação.
 
-Q: Quais cursos tem em Curitiba?
-A: O campus de Curitiba oferece, entre outros, os cursos de Engenharia Mecânica, Design e Arquitetura.
+Q: E no campus de Medianeira, quais os cursos?
+A: Em Medianeira, alguns dos cursos oferecidos são Ciência da Computação e Engenharia de Alimentos.
 
-Q: Qual o horário de funcionamento da biblioteca de Curitiba?
+Q: Como funciona o vestibular?
+A: O vestibular da UTFPR acontece duas vezes por ano. As inscrições são feitas online através do site oficial da universidade. [https://www.utfpr.edu.br/vestibular]
+
+Q: Qual o horário da biblioteca de Curitiba?
 A: A biblioteca do campus Curitiba funciona de segunda a sexta, das 8h às 22h.
-
-Q: Quanto custa para comer no RU?
-A: O valor da refeição no Restaurante Universitário (RU) é de R$ 5,50 para estudantes.
-
-Q: Como posso contatar a secretaria acadêmica?
-A: Para entrar em contato com a secretaria acadêmica geral, o e-mail de contato é dirgrad@utfpr.edu.br.
