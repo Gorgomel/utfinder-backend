@@ -1,10 +1,10 @@
-// server.js - Versão com correção no formato de embedding
+// server.js - Versão FINAL com Roteador de Intenção
 
 import dotenv from 'dotenv';
 import fs from 'fs';
 import express from 'express';
 import cors from 'cors';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, TaskType } from '@google/generative-ai';
 
 // --- FUNÇÃO DE SIMILARIDADE ---
 function cosineSimilarity(vecA, vecB) {
@@ -18,9 +18,7 @@ function cosineSimilarity(vecA, vecB) {
   }
   magA = Math.sqrt(magA);
   magB = Math.sqrt(magB);
-  if (magA === 0 || magB === 0) {
-    return 0;
-  }
+  if (magA === 0 || magB === 0) return 0;
   return dotProduct / (magA * magB);
 }
 
@@ -30,7 +28,7 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.GEMINI_API_KEY;
 
 const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
 const embeddingModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
 
 const knowledgeBase = [];
@@ -38,40 +36,39 @@ const knowledgeBase = [];
 // --- FUNÇÕES DA BASE DE CONHECIMENTO ----------------------------------
 
 async function buildKnowledgeBase() {
-  console.log('Iniciando construção da base de conhecimento...');
+  console.log('Iniciando construção da base de conhecimento com formato Q&A...');
   const fileContent = fs.readFileSync('./base_conhecimento.txt', 'utf8');
-  const facts = fileContent.split('\n').filter(line => line.trim().length > 0);
+  const qaPairs = fileContent.split('\n\n').filter(p => p.trim());
 
-  if (facts.length === 0) {
-    console.warn("Arquivo base_conhecimento.txt está vazio.");
+  if (qaPairs.length === 0) {
+    console.warn("Base de conhecimento está vazia ou em formato incorreto.");
     return;
   }
 
-  // --- CORREÇÃO AQUI ---
-  // A API agora espera um objeto com um campo 'content' que, por sua vez,
-  // tem um campo 'parts' contendo o texto.
-  const requests = facts.map(text => ({
-    content: {
-      parts: [{ text: text }],
-      role: "user" // O papel é obrigatório para o conteúdo
-    }
+  const requests = qaPairs.map(pair => ({
+    content: { parts: [{ text: pair }], role: "user" },
+    taskType: TaskType.RETRIEVAL_DOCUMENT,
+    title: pair.substring(0, pair.indexOf('\n'))
   }));
 
   const { embeddings } = await embeddingModel.batchEmbedContents({ requests });
 
-  for (let i = 0; i < facts.length; i++) {
+  for (let i = 0; i < qaPairs.length; i++) {
     knowledgeBase.push({
-      text: facts[i],
+      text: qaPairs[i],
       embedding: embeddings[i].values,
     });
   }
-  console.log(`✅ Base de conhecimento construída com ${knowledgeBase.length} fatos.`);
+  console.log(`✅ Base de conhecimento construída com ${knowledgeBase.length} pares de Q&A.`);
 }
 
 async function findRelevantFacts(userQuery) {
   if (knowledgeBase.length === 0) return '';
   
-  const { embedding } = await embeddingModel.embedContent(userQuery);
+  const { embedding } = await embeddingModel.embedContent({
+    content: { parts: [{ text: userQuery }], role: "user" },
+    taskType: TaskType.RETRIEVAL_QUERY
+  });
   const queryEmbedding = embedding.values;
 
   for (const fact of knowledgeBase) {
@@ -80,13 +77,25 @@ async function findRelevantFacts(userQuery) {
 
   knowledgeBase.sort((a, b) => b.similarity - a.similarity);
 
-  const topFacts = knowledgeBase
-    .slice(0, 3)
-    .map(fact => fact.text)
-    .join('\n');
-    
-  console.log('Fatos mais relevantes encontrados:\n', topFacts);
-  return topFacts;
+  return knowledgeBase.slice(0, 2).map(fact => fact.text).join('\n\n');
+}
+
+/**
+ * ROTEADOR INTELIGENTE
+ * Classifica a pergunta do usuário para decidir qual prompt usar.
+ */
+async function getResponseType(userQuery) {
+    const prompt = `
+      A pergunta do usuário é específica sobre a Universidade Tecnológica Federal do Paraná (UTFPR), envolvendo cursos, prazos, vestibular, campi, etc., ou é uma conversa geral/social (como "oi", "que dia é hoje?", "qual a cor do céu?")?
+      Responda apenas com uma única palavra: "UTFPR" ou "GERAL".
+
+      Pergunta: "${userQuery}"
+      Classificação:
+    `;
+    const result = await chatModel.generateContent(prompt);
+    const choice = result.response.text().trim().toUpperCase();
+    console.log(`Consulta do usuário classificada como: ${choice}`);
+    return choice;
 }
 
 // === SERVIDOR EXPRESS =================================================
@@ -98,26 +107,44 @@ app.post('/chat', async (req, res) => {
   const userMsg = (req.body.message || '').slice(0, 2000);
 
   try {
-    const relevantFacts = await findRelevantFacts(userMsg);
+    let reply = '';
+    let finalPrompt = '';
 
-    const prompt = `
-      Você é o UTFinder, um assistente virtual da UTFPR.
-      Responda a pergunta do usuário usando APENAS o CONTEXTO abaixo.
-      Se o CONTEXTO não tiver a resposta, diga que não sabe a informação.
+    // ROTEADOR EM AÇÃO: Decide qual caminho seguir
+    const responseType = await getResponseType(userMsg);
 
-      CONTEXTO:
-      ---
-      ${relevantFacts}
-      ---
+    if (responseType === 'UTFPR') {
+      // CAMINHO 1: A pergunta é sobre a faculdade, então usamos a busca semântica
+      console.log('Roteando para busca semântica (RAG)...');
+      const relevantFacts = await findRelevantFacts(userMsg);
+      
+      finalPrompt = `
+        Você é o UTFinder, um assistente prestativo da UTFPR.
+        Responda a pergunta do usuário usando APENAS o CONTEXTO abaixo.
+        Se o CONTEXTO não for suficiente, diga que não encontrou a informação.
 
-      Com base estrita no CONTEXTO acima, responda à pergunta do usuário.
-      Pergunta: "${userMsg}"
-    `;
+        CONTEXTO:
+        ---
+        ${relevantFacts}
+        ---
+
+        Com base estrita no CONTEXTO acima, responda a pergunta: "${userMsg}"
+      `;
+    } else {
+      // CAMINHO 2: É uma conversa geral, então deixamos a IA responder livremente
+      console.log('Roteando para conversa geral...');
+      finalPrompt = `
+        Você é o UTFinder, um assistente virtual amigável da UTFPR.
+        Responda a pergunta do usuário de forma conversacional e natural.
+        Se for uma pergunta de conhecimento geral, responda o que souber.
+        Não finja ser um humano.
+
+        Pergunta: "${userMsg}"
+      `;
+    }
     
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const reply = response.text().trim();
-
+    const result = await chatModel.generateContent(finalPrompt);
+    reply = result.response.text().trim();
     res.json({ reply });
 
   } catch (err) {
@@ -126,8 +153,8 @@ app.post('/chat', async (req, res) => {
   }
 });
 
-// Inicia o servidor e constrói a base de conhecimento
+// Inicia o servidor
 app.listen(PORT, async () => {
   await buildKnowledgeBase();
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor final com roteador inteligente rodando na porta ${PORT}`);
 });
