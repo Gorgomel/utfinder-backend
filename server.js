@@ -1,4 +1,4 @@
-// server.js - Versão Final com Multi-Query HyDE para máxima precisão
+// server.js - Versão final com processamento em lotes (chunking)
 
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -43,64 +43,56 @@ async function buildKnowledgeBase() {
     return;
   }
   
-  const contents = facts.map(text => ({ parts: [{ text }], role: "user" }));
-  const { embeddings } = await embeddingModel.batchEmbedContents({
-      requests: contents.map(content => ({ content, taskType: TaskType.RETRIEVAL_DOCUMENT }))
-  });
+  // --- CORREÇÃO AQUI: Processamento em Lotes (Chunking) ---
+  const batchSize = 100;
+  console.log(`Total de fatos a processar: ${facts.length}. Processando em lotes de ${batchSize}...`);
 
-  for (let i = 0; i < facts.length; i++) {
-    knowledgeBase.push({ text: facts[i], embedding: embeddings[i].values });
+  for (let i = 0; i < facts.length; i += batchSize) {
+    const batchFacts = facts.slice(i, i + batchSize);
+    console.log(`Processando lote de ${i} a ${i + batchFacts.length - 1}...`);
+
+    const contents = batchFacts.map(text => ({ parts: [{ text }], role: "user" }));
+    const { embeddings } = await embeddingModel.batchEmbedContents({
+        requests: contents.map(content => ({ content, taskType: TaskType.RETRIEVAL_DOCUMENT }))
+    });
+
+    for (let j = 0; j < batchFacts.length; j++) {
+      knowledgeBase.push({ text: batchFacts[j], embedding: embeddings[j].values });
+    }
   }
+  // --- FIM DA CORREÇÃO ---
+  
   console.log(`✅ Base de conhecimento construída com ${knowledgeBase.length} fatos.`);
 }
 
-/**
- * Usa a técnica Multi-Query HyDE para encontrar os fatos mais relevantes.
- */
-async function findRelevantFactsMultiQuery(userQuery) {
+async function findRelevantFactsHyDE(userQuery) {
     if (knowledgeBase.length === 0) return '';
   
-    // 1. Gera 3 variações da pergunta do usuário para uma busca mais ampla
-    const multiQueryPrompt = `Gere 3 variações da seguinte pergunta de usuário, mantendo o mesmo significado. Separe cada variação com '|||'.
-    Pergunta original: "${userQuery}"
-    Variações:`;
-    const multiQueryResult = await chatModel.generateContent(multiQueryPrompt);
-    const queries = [userQuery, ...multiQueryResult.response.text().split('|||').map(q => q.trim())];
+    const promptHyDE = `Escreva um pequeno parágrafo que responda a seguinte pergunta, mesmo que você não saiba a resposta exata: "${userQuery}"`;
+    const hypotheticalAnswerResult = await chatModel.generateContent(promptHyDE);
+    const hypotheticalAnswer = hypotheticalAnswerResult.response.text();
+    
+    const { embedding } = await embeddingModel.embedContent(hypotheticalAnswer);
+    const queryEmbedding = embedding.values;
   
-    // 2. Cria embeddings para todas as variações da pergunta
-    const { embeddings } = await embeddingModel.batchEmbedContents({
-      requests: queries.map(q => ({
-        content: { parts: [{ text: q }], role: "user" },
-        taskType: TaskType.RETRIEVAL_QUERY,
-      })),
-    });
-    const queryEmbeddings = embeddings.map(e => e.values);
-  
-    // 3. Para cada fato na base, encontra a sua MELHOR similaridade contra TODAS as variações da pergunta
     for (const fact of knowledgeBase) {
-      let maxSimilarity = 0;
-      for (const queryEmbedding of queryEmbeddings) {
-        const currentSimilarity = cosineSimilarity(queryEmbedding, fact.embedding);
-        if (currentSimilarity > maxSimilarity) {
-          maxSimilarity = currentSimilarity;
-        }
-      }
-      fact.similarity = maxSimilarity;
+      fact.similarity = cosineSimilarity(queryEmbedding, fact.embedding);
     }
   
     knowledgeBase.sort((a, b) => b.similarity - a.similarity);
   
     const topFacts = knowledgeBase
-      .slice(0, 4) // Pega os 4 melhores fatos
+      .slice(0, 3)
       .filter(fact => fact.similarity > 0.7)
       .map(fact => fact.text)
-      .join('\n\n');
-  
-    console.log('--- Multi-Query ---');
-    console.log('Variações de Busca Geradas:', queries.join(' | '));
+      .join('\n');
+      
+    console.log('--- HyDE ---');
+    console.log('Pergunta Original:', userQuery);
+    console.log('Resposta Hipotética Gerada:', hypotheticalAnswer);
     console.log('Fatos Relevantes Encontrados:', topFacts || 'Nenhum');
-    console.log('-------------------');
-  
+    console.log('------------');
+    
     return topFacts;
 }
 
@@ -113,16 +105,15 @@ app.post('/chat', async (req, res) => {
   const userMsg = (req.body.message || '').slice(0, 2000);
 
   try {
-    const relevantFacts = await findRelevantFactsMultiQuery(userMsg);
+    const relevantFacts = await findRelevantFactsHyDE(userMsg);
 
     const finalPrompt = `
       # PERSONA
-      Você é o UTFinder, um assistente especialista da UTFPR. Sua comunicação é clara, direta e sempre prestativa.
+      Você é o UTFinder, um assistente especialista da UTFPR. Sua comunicação é clara e direta. Aja como um especialista consultando suas anotações. Nunca mencione sua base de dados.
 
-      # INSTRUÇÕES
-      - Sua principal tarefa é responder a pergunta do usuário com base no CONTEXTO.
-      - Se o CONTEXTO contiver múltiplos fatos relevantes, sintetize-os em uma resposta única e coesa.
-      - Se o CONTEXTO não for relevante, responda usando seu conhecimento geral de forma natural e amigável.
+      # REGRAS
+      1. Use o CONTEXTO abaixo para formular sua resposta para a PERGUNTA do usuário.
+      2. Se o CONTEXTO estiver vazio ou não for relevante, use seu conhecimento geral para ter uma conversa amigável, mas deixe claro que não possui a informação específica sobre a UTFPR.
       
       # CONTEXTO
       ---
@@ -131,6 +122,8 @@ app.post('/chat', async (req, res) => {
 
       # PERGUNTA
       "${userMsg}"
+
+      Com base nas regras, forneça a resposta.
     `;
     
     const result = await chatModel.generateContent(finalPrompt);
@@ -147,5 +140,5 @@ app.post('/chat', async (req, res) => {
 // Inicia o servidor
 app.listen(PORT, async () => {
   await buildKnowledgeBase();
-  console.log(`🚀 Servidor Multi-Query HyDE rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor HyDE rodando na porta ${PORT}`);
 });
