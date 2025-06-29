@@ -1,4 +1,4 @@
-// server.js - Versão FINAL com Roteador de Intenção
+// server.js - Versão FINAL com Conhecimento Híbrido e Priorização
 
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -36,12 +36,12 @@ const knowledgeBase = [];
 // --- FUNÇÕES DA BASE DE CONHECIMENTO ----------------------------------
 
 async function buildKnowledgeBase() {
-  console.log('Iniciando construção da base de conhecimento com formato Q&A...');
+  console.log('Iniciando construção da base de conhecimento...');
   const fileContent = fs.readFileSync('./base_conhecimento.txt', 'utf8');
   const qaPairs = fileContent.split('\n\n').filter(p => p.trim());
 
   if (qaPairs.length === 0) {
-    console.warn("Base de conhecimento está vazia ou em formato incorreto.");
+    console.warn("Base de conhecimento está vazia.");
     return;
   }
 
@@ -59,7 +59,7 @@ async function buildKnowledgeBase() {
       embedding: embeddings[i].values,
     });
   }
-  console.log(`✅ Base de conhecimento construída com ${knowledgeBase.length} pares de Q&A.`);
+  console.log(`✅ Base de conhecimento construída com ${knowledgeBase.length} pares.`);
 }
 
 async function findRelevantFacts(userQuery) {
@@ -77,25 +77,12 @@ async function findRelevantFacts(userQuery) {
 
   knowledgeBase.sort((a, b) => b.similarity - a.similarity);
 
-  return knowledgeBase.slice(0, 2).map(fact => fact.text).join('\n\n');
-}
-
-/**
- * ROTEADOR INTELIGENTE
- * Classifica a pergunta do usuário para decidir qual prompt usar.
- */
-async function getResponseType(userQuery) {
-    const prompt = `
-      A pergunta do usuário é específica sobre a Universidade Tecnológica Federal do Paraná (UTFPR), envolvendo cursos, prazos, vestibular, campi, etc., ou é uma conversa geral/social (como "oi", "que dia é hoje?", "qual a cor do céu?")?
-      Responda apenas com uma única palavra: "UTFPR" ou "GERAL".
-
-      Pergunta: "${userQuery}"
-      Classificação:
-    `;
-    const result = await chatModel.generateContent(prompt);
-    const choice = result.response.text().trim().toUpperCase();
-    console.log(`Consulta do usuário classificada como: ${choice}`);
-    return choice;
+  // Aumentamos para 4 para dar mais contexto, mas com um limiar de relevância
+  return knowledgeBase
+    .slice(0, 4)
+    .filter(fact => fact.similarity > 0.6) // Apenas fatos realmente relevantes
+    .map(fact => fact.text)
+    .join('\n\n');
 }
 
 // === SERVIDOR EXPRESS =================================================
@@ -107,44 +94,32 @@ app.post('/chat', async (req, res) => {
   const userMsg = (req.body.message || '').slice(0, 2000);
 
   try {
-    let reply = '';
-    let finalPrompt = '';
+    // 1. SEMPRE buscamos na base de conhecimento específica
+    const relevantFacts = await findRelevantFacts(userMsg);
 
-    // ROTEADOR EM AÇÃO: Decide qual caminho seguir
-    const responseType = await getResponseType(userMsg);
+    // 2. Criamos um PROMPT MESTRE que ensina a IA a priorizar e mesclar
+    const finalPrompt = `
+      # PERSONA
+      Você é o UTFinder, um assistente virtual da UTFPR. Sua personalidade é amigável, prestativa e um pouco descontraída. Use emojis quando apropriado. 😉
 
-    if (responseType === 'UTFPR') {
-      // CAMINHO 1: A pergunta é sobre a faculdade, então usamos a busca semântica
-      console.log('Roteando para busca semântica (RAG)...');
-      const relevantFacts = await findRelevantFacts(userMsg);
-      
-      finalPrompt = `
-        Você é o UTFinder, um assistente prestativo da UTFPR.
-        Responda a pergunta do usuário usando APENAS o CONTEXTO abaixo.
-        Se o CONTEXTO não for suficiente, diga que não encontrou a informação.
+      # REGRAS DE RACIOCÍNIO
+      1.  **Prioridade Máxima:** Sua primeira fonte de verdade é a seção 'CONTEXTO ESPECÍFICO DA UTFPR'. Baseie sua resposta nela sempre que possível.
+      2.  **Complemento com Conhecimento Geral:** Se o contexto específico não for suficiente para responder completamente à pergunta, você **PODE** usar seu conhecimento geral para complementar a resposta.
+      3.  **Aviso de Fonte:** Se você usar seu conhecimento geral, você **DEVE** sinalizar isso. Por exemplo: "Na minha base de dados da UTFPR não achei sobre isso, mas de forma geral..." ou "Sobre o prazo, a informação que tenho é X. Já sobre o tempo, como não tenho acesso a dados em tempo real...".
+      4.  **Conversa Social:** Para conversas que não são sobre a UTFPR (oi, tudo bem, piadas, etc.), aja naturalmente de acordo com sua persona, sem precisar mencionar o contexto.
 
-        CONTEXTO:
-        ---
-        ${relevantFacts}
-        ---
+      # CONTEXTO ESPECÍFICO DA UTFPR
+      ---
+      ${relevantFacts || "Nenhum contexto específico encontrado para esta pergunta."}
+      ---
 
-        Com base estrita no CONTEXTO acima, responda a pergunta: "${userMsg}"
-      `;
-    } else {
-      // CAMINHO 2: É uma conversa geral, então deixamos a IA responder livremente
-      console.log('Roteando para conversa geral...');
-      finalPrompt = `
-        Você é o UTFinder, um assistente virtual amigável da UTFPR.
-        Responda a pergunta do usuário de forma conversacional e natural.
-        Se for uma pergunta de conhecimento geral, responda o que souber.
-        Não finja ser um humano.
-
-        Pergunta: "${userMsg}"
-      `;
-    }
+      Com base em todas as suas regras, responda a pergunta do usuário.
+      Pergunta: "${userMsg}"
+    `;
     
     const result = await chatModel.generateContent(finalPrompt);
-    reply = result.response.text().trim();
+    const reply = result.response.text().trim();
+
     res.json({ reply });
 
   } catch (err) {
@@ -156,5 +131,5 @@ app.post('/chat', async (req, res) => {
 // Inicia o servidor
 app.listen(PORT, async () => {
   await buildKnowledgeBase();
-  console.log(`🚀 Servidor final com roteador inteligente rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor com conhecimento híbrido rodando na porta ${PORT}`);
 });
