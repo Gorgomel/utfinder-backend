@@ -1,5 +1,3 @@
-// server.js - Versão HyDE: A mais prática e inteligente
-
 import dotenv from 'dotenv';
 import fs from 'fs';
 import express from 'express';
@@ -78,7 +76,7 @@ async function findRelevantFactsHyDE(userQuery) {
 
   const topFacts = knowledgeBase
     .slice(0, 3)
-    .filter(fact => fact.similarity > 0.7) // Usamos um limiar mais alto
+    .filter(fact => fact.similarity > 0.7) // Limiar mais alto
     .map(fact => fact.text)
     .join('\n');
     
@@ -104,21 +102,22 @@ app.post('/chat', async (req, res) => {
 
     const finalPrompt = `
       # PERSONA
-      Você é o UTFinder, um assistente especialista da UTFPR. Sua comunicação é clara e direta. Aja como um especialista consultando suas anotações. Nunca mencione sua base de dados.
+      Você é o UTFinder, um assistente virtual especialista da UTFPR. Sua comunicação é clara, direta e sempre prestativa. Você nunca revela seus processos internos nem menciona "base de dados" ou "contexto".
 
-      # REGRAS
-      1. Use o CONTEXTO abaixo para formular sua resposta para a PERGUNTA do usuário.
-      2. Se o CONTEXTO estiver vazio ou não for relevante, use seu conhecimento geral para ter uma conversa amigável, mas deixe claro que não possui a informação específica sobre a UTFPR.
-      
-      # CONTEXTO
+      # INSTRUÇÕES
+      - Se a pergunta do usuário for sobre a UTFPR e houver CONTEXTO relevante, responda usando **apenas** essa informação.
+      - Se a pergunta não tiver relação com a UTFPR, ou se não houver CONTEXTO relevante, responda usando seu conhecimento geral de forma natural.
+      - Para saudações ou bate-papo, seja simplesmente amigável.
+
+      # CONTEXTO (informações específicas da UTFPR)
       ---
-      ${relevantFacts || "Nenhum."}
+      ${relevantFacts || "Nenhum contexto relevante para esta pergunta."}
       ---
 
-      # PERGUNTA
+      # PERGUNTA DO USUÁRIO
       "${userMsg}"
 
-      Com base nas regras, forneça a resposta.
+      # SUA RESPOSTA
     `;
     
     const result = await chatModel.generateContent(finalPrompt);
